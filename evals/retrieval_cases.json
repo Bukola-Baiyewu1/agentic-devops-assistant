@@ -1,0 +1,18 @@
+[
+  {"query": "High 5xx error rate 500 errors after deploy", "expected_source": "high-error-rate.md", "relevant_chunks": ["high-error-rate#restart-after-a-recent-deploy"]},
+  {"query": "unhandled exception in request handler after release", "expected_source": "high-error-rate.md", "relevant_chunks": ["high-error-rate#restart-after-a-recent-deploy", "high-error-rate#check-recent-logs-first"]},
+  {"query": "error rate above 5 percent for five minutes", "expected_source": "high-error-rate.md", "relevant_chunks": ["high-error-rate#overview", "high-error-rate#restart-after-a-recent-deploy"]},
+  {"query": "stack traces in logs, 500 responses", "expected_source": "high-error-rate.md", "relevant_chunks": ["high-error-rate#check-recent-logs-first"]},
+  {"query": "High CPU saturation on web", "expected_source": "resource-saturation.md", "relevant_chunks": ["resource-saturation#scale-out-by-one-replica", "resource-saturation#overview"]},
+  {"query": "p95 latency above target for 10 minutes", "expected_source": "resource-saturation.md", "relevant_chunks": ["resource-saturation#overview", "resource-saturation#scale-out-by-one-replica"]},
+  {"query": "memory saturated, service slow under load", "expected_source": "resource-saturation.md", "relevant_chunks": ["resource-saturation#scale-out-by-one-replica", "resource-saturation#overview"]},
+  {"query": "saturation persists after scaling out", "expected_source": "resource-saturation.md", "relevant_chunks": ["resource-saturation#escalate-if-saturation-persists"]},
+  {"query": "Disk pressure disk usage 91%", "expected_source": "disk-pressure.md", "relevant_chunks": ["disk-pressure#escalate-disk-pressure-to-a-human", "disk-pressure#overview"]},
+  {"query": "volume almost full, delete old files?", "expected_source": "disk-pressure.md", "relevant_chunks": ["disk-pressure#never-automate-disk-cleanup"]},
+  {"query": "TLS certificate expires in 5 days", "expected_source": "certificate-expiry.md", "relevant_chunks": ["certificate-expiry#escalate-certificate-renewal", "certificate-expiry#overview"]},
+  {"query": "certificate has expired on api gateway", "expected_source": "certificate-expiry.md", "relevant_chunks": ["certificate-expiry#overview", "certificate-expiry#escalate-certificate-renewal"]},
+  {"query": "database connection pool exhausted", "expected_source": "database-connections.md", "relevant_chunks": ["database-connections#overview", "database-connections#escalate-to-the-database-owner"]},
+  {"query": "connection timeouts to the database", "expected_source": "database-connections.md", "relevant_chunks": ["database-connections#overview", "database-connections#escalate-to-the-database-owner"]},
+  {"query": "quarterly sales report is late", "expected_source": null, "relevant_chunks": []},
+  {"query": "office coffee machine broken", "expected_source": null, "relevant_chunks": []}
+]

@@ -1,7 +1,13 @@
 # Disk pressure on a host
 
-Trigger: disk usage above 85% on a host.
+Trigger: disk usage above 85% on a host or volume.
 
-Steps:
-1. Disk issues are not auto-remediated in this system.
-2. Always escalate disk pressure to a human — deleting data is never automated.
+## Never automate disk cleanup
+
+Disk pressure is never auto-remediated. Deleting data is never automated
+because it cannot be undone.
+
+## Escalate disk pressure to a human
+
+Always escalate disk usage alerts to the human on-call engineer with the
+current disk usage and the largest directories.
