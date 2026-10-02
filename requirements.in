@@ -1,0 +1,13 @@
+# Runtime dependencies. Edit this file, then regenerate the lock file:
+#   uv pip compile requirements.in --universal --python-version 3.11 --generate-hashes -o requirements.txt
+fastapi>=0.142,<1
+uvicorn[standard]>=0.54,<1
+pydantic>=2.13,<3
+httpx>=0.28,<1
+jinja2>=3.1,<4
+sqlalchemy>=2.1,<3
+psycopg[binary]>=3.3,<4
+prometheus-client>=0.26,<1
+anthropic>=1.11,<2
+fastmcp>=4.0,<5
+langfuse>=4.16,<5

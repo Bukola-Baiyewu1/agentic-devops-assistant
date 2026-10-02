@@ -1,13 +1,49 @@
 [project]
-name = "agentic-devops-assistant"
-version = "0.1.0"
-description = "Aegis — an MCP-native agentic DevOps assistant that triages alerts, cites runbooks, and acts only after human approval."
+name = "aegis-devops-assistant"
+version = "1.0.0"
+description = "Aegis: an agentic DevOps assistant that triages alerts, cites runbooks, and acts only after human approval."
+readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.11"
 dynamic = ["dependencies"]
 
 [tool.setuptools.dynamic]
-dependencies = { file = ["requirements.txt"] }
+dependencies = { file = ["requirements.in"] }
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["src/worker.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "SIM"]
+ignore = [
+  "S101",   # assert is fine in tests and for internal invariants
+  "S311",   # random is used for retry jitter, not cryptography
+  "B008",   # FastAPI dependency injection pattern
+  "SIM105",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106", "S108", "E501", "S603"]
+"scripts/*" = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true
+check_untyped_defs = true
+files = ["src"]

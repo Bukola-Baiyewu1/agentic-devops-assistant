@@ -1,13 +1,95 @@
-# One command to run everything: docker compose up
-# The app bundles the demo target service and the approval UI, so this is all
-# you need. (Langfuse/Grafana can be added here later as extra services for
-# hosted tracing and dashboards.)
+# Local stack: docker compose up --build
+#   API + approval UI  http://localhost:8000      (login demo / demo by default)
+#   PostgreSQL         durable events, actions, audit, capabilities
+#   Worker             retries, dead letters, approval expiry
+#
+# Optional dashboards: docker compose --profile observability up --build
+#   Prometheus         http://localhost:9090
+#   Grafana            http://localhost:3000      (admin / admin unless changed)
+#
+# Everything is a simulator. Nothing here can touch real infrastructure.
+
+x-aegis-env: &aegis-env
+  DATABASE_URL: postgresql+psycopg://aegis:${POSTGRES_PASSWORD:-aegis-local-only}@postgres:5432/aegis
+  AEGIS_ENV: ${AEGIS_ENV:-development}
+  RUNBOOKS_DIR: /app/runbooks
+
 services:
-  aegis:
+  postgres:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_USER: aegis
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aegis-local-only}
+      POSTGRES_DB: aegis
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aegis -d aegis"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # not published to the host: only the API and worker can reach it
+    restart: unless-stopped
+
+  api:
     build: .
+    image: aegis:local
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *aegis-env
+      AEGIS_PROCESS_INLINE: "true"
     ports:
       - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build: .
+    image: aegis:local
+    command: ["python", "-m", "src.worker"]
     env_file:
-      - .env
+      - path: .env
+        required: false
+    environment:
+      <<: *aegis-env
+      WORKER_METRICS_PORT: "9100"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9100/metrics', timeout=2).status == 200 else 1)"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    profiles: ["observability"]
     volumes:
-      - ./runbooks:/app/runbooks
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on: [api, worker]
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    profiles: ["observability"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on: [prometheus]
+
+volumes:
+  pgdata:

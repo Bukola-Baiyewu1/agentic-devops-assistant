@@ -1,8 +1,15 @@
 __pycache__/
 *.pyc
 .env
+.aegis.db
+.aegis.db-journal
 .aegis_state.json
 .aegis_state.json.tmp
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
 .venv/
 venv/
