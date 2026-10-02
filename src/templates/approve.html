@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aegis approval - {{ action.id }}</title>
+  <style nonce="{{ csp_nonce }}">
+    :root { --fg:#16181d; --muted:#5b6170; --bg:#f6f7f9; --card:#fff; --line:#dfe2e8; --ok:#137a3d; --bad:#b42318; --accent:#2747c9; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:15px/1.5 system-ui, -apple-system, Segoe UI, sans-serif; color:var(--fg); background:var(--bg); }
+    main { max-width:760px; margin:32px auto; padding:0 16px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:20px 22px; margin-bottom:16px; }
+    h1 { font-size:20px; margin:0 0 4px; }
+    h2 { font-size:16px; margin:0 0 8px; }
+    h2.spaced { margin-top:16px; }
+    .muted { color:var(--muted); }
+    dl { display:grid; grid-template-columns:150px 1fr; gap:6px 14px; margin:12px 0 0; }
+    dt { color:var(--muted); }
+    dd { margin:0; word-break:break-word; }
+    code, pre { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; }
+    pre { background:#f1f3f6; border:1px solid var(--line); border-radius:8px; padding:12px; white-space:pre-wrap; }
+    .status { display:inline-block; padding:2px 10px; border-radius:999px; background:#eef1fb; color:var(--accent); font-weight:600; }
+    .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
+    button { font:inherit; padding:9px 18px; border-radius:8px; border:1px solid var(--line); cursor:pointer; background:#fff; }
+    button.primary { background:var(--ok); border-color:var(--ok); color:#fff; }
+    button.danger { background:#fff; border-color:var(--bad); color:var(--bad); }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+  </style>
+</head>
+<body data-action-id="{{ action.id }}" data-approve-token="{{ approve_token or '' }}" data-rollback-token="{{ rollback_token or '' }}">
+<main>
+  <div class="card">
+    <h1>{% if action.status in ("pending_approval", "rollback_pending") %}Approval required{% else %}Action {{ action.status | replace("_", " ") }}{% endif %}</h1>
+    <div class="muted">Action <code>{{ action.id }}</code> &middot; signed in as <b>{{ user }}</b></div>
+    <p>Status: <span class="status" id="status">{{ action.status }}</span></p>
+    <dl>
+      <dt>Alert</dt><dd>{{ action.alert.name }}</dd>
+      <dt>Description</dt><dd>{{ action.alert.description }}</dd>
+      <dt>Service</dt><dd><code>{{ action.service }}</code></dd>
+      <dt>Proposed action</dt><dd><code>{{ action.tool_name or "none (escalated)" }}</code> {% if action.tool_args %}<code>{{ action.tool_args | tojson }}</code>{% endif %}</dd>
+      <dt>Planner</dt><dd>{{ action.trace.mode }}{% if action.trace.model %} ({{ action.trace.model }}){% endif %}</dd>
+      {% if action.approver %}<dt>Decided by</dt><dd>{{ action.approver }}</dd>{% endif %}
+      {% if action.prior_state %}<dt>State before</dt><dd><code>{{ action.prior_state | tojson }}</code></dd>{% endif %}
+      {% if action.new_state %}<dt>State after</dt><dd><code>{{ action.new_state | tojson }}</code></dd>{% endif %}
+      {% if action.rollback and action.rollback.approver %}<dt>Rollback by</dt><dd>{{ action.rollback.approver }}</dd>{% endif %}
+      {% if action.error %}<dt>Error</dt><dd>{{ action.error }}</dd>{% endif %}
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Reasoning</h2>
+    <p>{{ action.proposal.reasoning }}</p>
+    {% if action.citation %}
+    <h2 class="spaced">Runbook evidence</h2>
+    <div class="muted"><code>{{ action.citation.source }}</code> &middot; {{ action.citation.heading }} &middot; lines {{ action.citation.lines }}</div>
+    {% if citation_text %}<pre>{{ citation_text }}</pre>{% endif %}
+    {% else %}
+    <p class="muted">No supporting runbook passage.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    {% if action.status == "pending_approval" and approve_token %}
+      <p>Approving runs exactly the action above, once.</p>
+      <div class="actions">
+        <button class="primary" data-kind="approve">Approve</button>
+        <button class="danger" data-kind="deny">Deny</button>
+      </div>
+    {% elif action.status == "executed" %}
+      <p>The action ran. A rollback needs a separate approval.</p>
+      <div class="actions"><button data-kind="request-rollback">Request rollback</button></div>
+    {% elif action.status == "rollback_pending" and rollback_token %}
+      <p>Rollback restores the state recorded before the action.</p>
+      <div class="actions"><button class="primary" data-kind="approve-rollback">Approve rollback</button></div>
+    {% elif action.status == "rolled_back" %}
+      <p>Rolled back to the state recorded before the action. This action is closed.</p>
+    {% else %}
+      <p class="muted">No decision is open for this action.</p>
+    {% endif %}
+    <pre id="out" hidden></pre>
+  </div>
+</main>
+<script nonce="{{ csp_nonce }}">
+  (function () {
+    const d = document.body.dataset;
+    const routes = {
+      "approve": ["approve", { token: d.approveToken }],
+      "deny": ["deny", { token: d.approveToken }],
+      "request-rollback": ["rollback", {}],
+      "approve-rollback": ["rollback/approve", { token: d.rollbackToken }],
+    };
+    document.querySelectorAll("button[data-kind]").forEach(function (btn) {
+      btn.addEventListener("click", async function () {
+        const [path, body] = routes[btn.dataset.kind];
+        document.querySelectorAll("button").forEach(function (b) { b.disabled = true; });
+        const r = await fetch("/actions/" + encodeURIComponent(d.actionId) + "/" + path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify(body),
+        });
+        const out = document.getElementById("out");
+        let data = {};
+        try { data = await r.json(); } catch (e) { data = { detail: r.statusText }; }
+        if (r.ok) { location.reload(); return; }
+        out.hidden = false;
+        out.textContent = "HTTP " + r.status + ": " + (typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail));
+        document.querySelectorAll("button").forEach(function (b) { b.disabled = false; });
+      });
+    });
+  })();
+</script>
+</body>
+</html>
