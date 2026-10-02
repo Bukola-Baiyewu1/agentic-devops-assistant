@@ -1,0 +1,13 @@
+[project]
+name = "agentic-devops-assistant"
+version = "0.1.0"
+description = "Aegis — an MCP-native agentic DevOps assistant that triages alerts, cites runbooks, and acts only after human approval."
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

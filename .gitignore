@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+.aegis_state.json
+.aegis_state.json.tmp
+.pytest_cache/
+.venv/
+venv/

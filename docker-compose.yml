@@ -1,0 +1,13 @@
+# One command to run everything: docker compose up
+# The app bundles the demo target service and the approval UI, so this is all
+# you need. (Langfuse/Grafana can be added here later as extra services for
+# hosted tracing and dashboards.)
+services:
+  aegis:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./runbooks:/app/runbooks
