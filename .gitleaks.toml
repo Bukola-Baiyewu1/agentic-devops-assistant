@@ -1,0 +1,13 @@
+# Secret scanning configuration (used by CI via gitleaks-action).
+# Extends the default rules. The only exclusions are test files that contain
+# deliberately fake credentials to prove the redactor removes them.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake credentials used as redaction test fixtures"
+paths = [
+  '''tests/test_security\.py''',
+  '''tests/conftest\.py''',
+  '''__pycache__/''',
+]

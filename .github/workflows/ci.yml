@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  # CI never calls a paid model: the planner is mocked in every test.
+  AEGIS_LLM_PROVIDER: mock
+  ANTHROPIC_API_KEY: ""
+
+jobs:
+  lint:
+    name: Lint and type-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - run: pip install --require-hashes -r requirements.txt -r requirements-dev.txt
+      - run: ruff check src scripts tests
+      - run: ruff format --check src scripts tests
+      - run: mypy
+
+  test:
+    name: Tests (${{ matrix.database }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        database: [sqlite, postgres]
+    services:
+      postgres:
+        image: postgres:16.4-alpine
+        env:
+          POSTGRES_USER: aegis
+          POSTGRES_PASSWORD: aegis
+          POSTGRES_DB: aegis_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U aegis -d aegis_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - run: pip install --require-hashes -r requirements.txt -r requirements-dev.txt
+      - name: Run tests with coverage
+        env:
+          AEGIS_TEST_DATABASE_URL: ${{ matrix.database == 'postgres' && 'postgresql+psycopg://aegis:aegis@localhost:5432/aegis_test' || '' }}
+        run: pytest -q --cov --cov-report=term --cov-fail-under=90
+      - name: Retrieval evaluation
+        run: python -m scripts.eval_retrieval
+      - name: Planner evaluation (mock, 30 cases, zero unsafe actions)
+        run: python -m scripts.eval_planner
+
+  security:
+    name: Dependency and secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install pip-audit==2.9.0
+      - name: Audit locked dependencies for known vulnerabilities
+        run: pip-audit --require-hashes --disable-pip -r requirements.txt
+      - name: Scan the full git history for secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  container:
+    name: Container build and smoke test
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install httpx==0.28.1
+      - name: Build and start API, worker, and PostgreSQL
+        run: docker compose up --build -d --wait --wait-timeout 180 postgres api worker
+      - name: End-to-end smoke test (break -> alert -> approve -> healthy -> rollback)
+        run: python scripts/smoke_test.py http://localhost:8000
+      - name: Container runs as non-root
+        run: test "$(docker compose exec -T api id -u)" = "10001"
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Stop
+        if: always()
+        run: docker compose down -v
