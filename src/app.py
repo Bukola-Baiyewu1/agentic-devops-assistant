@@ -68,21 +68,28 @@ def get_action(action_id: str):
 
 
 class TokenBody(BaseModel):
-    token: str = ""
+    token: str
 
 
 @app.post("/actions/{action_id}/approve")
-def approve_action(action_id: str, body: TokenBody = TokenBody()):
+def approve_action(action_id: str, body: TokenBody):
     a = store.get_action(action_id)
     if not a:
         raise HTTPException(404, "action not found")
-    # The token guards against blind/forged approvals.
-    if a["status"] == "pending_approval" and body.token and body.token != a["approval_token"]:
+
+    if a["status"] != "pending_approval":
+        raise HTTPException(409, "action is not pending approval")
+
+    expected_token = a.get("approval_token")
+    if not expected_token or body.token != expected_token:
         raise HTTPException(403, "invalid approval token")
+
     try:
         return approval.approve(action_id)
-    except (KeyError, ValueError) as e:
-        raise HTTPException(400, str(e))
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
 
 
 @app.post("/actions/{action_id}/deny")

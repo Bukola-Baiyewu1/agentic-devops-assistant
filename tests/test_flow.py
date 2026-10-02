@@ -48,6 +48,36 @@ def test_bad_token_is_rejected():
     assert r.status_code == 403
 
 
+def test_missing_approval_token_is_rejected():
+    client.post("/demo/break")
+    action_id = client.post(
+        "/webhook/alert",
+        json=_alert("evt-missing-token"),
+    ).json()["action_id"]
+
+    response = client.post(f"/actions/{action_id}/approve", json={})
+
+    assert response.status_code in (403, 422)
+    assert store.get_action(action_id)["status"] == "pending_approval"
+
+
+def test_wrong_approval_token_is_rejected_without_execution():
+    client.post("/demo/break")
+    action_id = client.post(
+        "/webhook/alert",
+        json=_alert("evt-wrong-token-2"),
+    ).json()["action_id"]
+
+    response = client.post(
+        f"/actions/{action_id}/approve",
+        json={"token": "definitely-wrong"},
+    )
+
+    assert response.status_code == 403
+    assert store.get_action(action_id)["status"] == "pending_approval"
+    assert client.get("/demo/health").json()["status"] == "unhealthy"
+
+
 def test_disk_alert_escalates_without_action():
     r = client.post("/webhook/alert", json=_alert("evt-disk", "Disk pressure", "disk usage 91%")).json()
     assert r["status"] == "escalated"
