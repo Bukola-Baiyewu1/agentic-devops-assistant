@@ -22,7 +22,7 @@ import os
 import re
 from collections import Counter
 from dataclasses import asdict, dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from .config import settings
 
@@ -207,13 +207,86 @@ class TfidfRetriever:
         return scored[:k]
 
 
-rag = TfidfRetriever()
+class AthenaRetriever:
+    """Retrieval from Athena, the hybrid-RAG service (dense + BM25, RRF fusion, reranking).
+
+    Athena chunks runbooks with the same "file#heading-slug" ids and line ranges
+    as the built-in retriever, so citations, the policy check (the cited text
+    must mention the proposed tool), and the approval page work unchanged.
+
+    If Athena says no passage is relevant enough, this returns nothing and the
+    agent escalates. If Athena is unreachable, it falls back to the built-in
+    TF-IDF retriever and counts the fallback in aegis_retriever_fallbacks_total.
+    """
+
+    def __init__(self, fallback: TfidfRetriever, base_url: str | None = None, client: Any | None = None):
+        self.fallback = fallback
+        self.base_url = (base_url or settings.athena_url).rstrip("/")
+        self._client = client
+        self._seen: dict[str, Chunk] = {}
+
+    @property
+    def chunks(self) -> list[Chunk]:
+        return self.fallback.chunks
+
+    @property
+    def client(self) -> Any:
+        if self._client is None:
+            import httpx
+
+            self._client = httpx.Client(timeout=settings.athena_timeout_seconds)
+        return self._client
+
+    def get(self, chunk_id: str) -> Chunk | None:
+        return self._seen.get(chunk_id) or self.fallback.get(chunk_id)
+
+    def retrieve(self, query: str, k: int | None = None) -> list[RetrievedChunk]:
+        from .observability import RETRIEVER_FALLBACKS, log
+
+        k = k or settings.retrieval_top_k
+        payload = {"query": query, "top_k": k, "mode": settings.athena_mode, "strategy": settings.athena_strategy}
+        try:
+            response = self.client.post(f"{self.base_url}/retrieve", json=payload)
+            response.raise_for_status()
+            body = response.json()
+            items = body["results"]
+        except Exception as exc:  # network error, bad status, or malformed body
+            RETRIEVER_FALLBACKS.inc()
+            log("athena_unavailable", error=type(exc).__name__, url=self.base_url)
+            return self.fallback.retrieve(query, k)
+        if not body.get("relevant", False):
+            return []
+        results: list[RetrievedChunk] = []
+        for item in items[:k]:
+            start, _, end = str(item.get("lines", "0-0")).partition("-")
+            chunk = Chunk(
+                chunk_id=item["chunk_id"],
+                source=item["source"],
+                title=item.get("title") or item["source"],
+                heading=item.get("heading", ""),
+                text=item["text"],
+                start_line=int(start or 0),
+                end_line=int(end or 0),
+                checksum=item.get("checksum", ""),
+                runbook_version="athena",
+            )
+            self._seen[chunk.chunk_id] = chunk
+            results.append(RetrievedChunk(chunk, round(float(item.get("score", 0.0)), 4)))
+        return results
 
 
-def set_retriever(r: TfidfRetriever) -> None:
+def build_retriever() -> TfidfRetriever | AthenaRetriever:
+    tfidf = TfidfRetriever()
+    return AthenaRetriever(tfidf) if settings.retriever == "athena" else tfidf
+
+
+rag: TfidfRetriever | AthenaRetriever = build_retriever()
+
+
+def set_retriever(r: TfidfRetriever | AthenaRetriever) -> None:
     global rag
     rag = r
 
 
-def get_retriever() -> TfidfRetriever:
+def get_retriever() -> TfidfRetriever | AthenaRetriever:
     return rag

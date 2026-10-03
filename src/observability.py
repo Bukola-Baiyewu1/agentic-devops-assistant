@@ -79,6 +79,9 @@ TOOL_EXECUTIONS = Counter(
 ROLLBACKS = Counter("aegis_rollbacks_total", "Rollbacks", ["result"], registry=registry)
 RETRIES = Counter("aegis_event_retries_total", "Event processing retries scheduled", registry=registry)
 DEAD_LETTERS = Counter("aegis_dead_letters_total", "Events moved to dead letter", registry=registry)
+RETRIEVER_FALLBACKS = Counter(
+    "aegis_retriever_fallbacks_total", "Athena unavailable; built-in TF-IDF used instead", registry=registry
+)
 PLAN_LATENCY = Histogram(
     "aegis_plan_latency_seconds",
     "Planning latency",

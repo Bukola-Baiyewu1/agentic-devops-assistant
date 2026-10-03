@@ -88,16 +88,27 @@ def baseline_file_level(cases: list[dict], runbooks_dir: str = "runbooks") -> Sc
     return Scores(hits / max(1, len(answerable)), float("nan"), float("nan"), rejected / max(1, len(unrelated)))
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Evaluate runbook retrieval")
+    parser.add_argument(
+        "--athena-url", help="also evaluate Athena (hybrid RAG) at this URL, e.g. http://localhost:8100"
+    )
+    args = parser.parse_args(argv)
+
     cases = load_cases()
-    shipped = evaluate(TfidfRetriever(), cases)
-    base = baseline_file_level(cases)
+    tfidf = TfidfRetriever()
+    columns = {"baseline (file)": baseline_file_level(cases), "shipped (section)": evaluate(tfidf, cases)}
+    if args.athena_url:
+        from src.rag import AthenaRetriever
+
+        columns["athena (hybrid)"] = evaluate(AthenaRetriever(tfidf, args.athena_url), cases)  # type: ignore[arg-type]
     print(f"{len(cases)} labelled queries ({sum(1 for c in cases if not c['expected_source'])} unrelated)\n")
-    print(f"{'metric':28} {'baseline (file)':>16} {'shipped (section)':>18}")
+    print(f"{'metric':28}" + "".join(f"{name:>19}" for name in columns))
     for field in ("source_hit_at_1", "chunk_recall_at_k", "mrr", "unrelated_rejected"):
-        b, s = getattr(base, field), getattr(shipped, field)
         fmt = lambda v: "n/a" if v != v else f"{v:.2f}"  # noqa: E731 - NaN check
-        print(f"{field:28} {fmt(b):>16} {fmt(s):>18}")
+        print(f"{field:28}" + "".join(f"{fmt(getattr(col, field)):>19}" for col in columns.values()))
 
 
 if __name__ == "__main__":

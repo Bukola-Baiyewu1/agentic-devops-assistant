@@ -61,3 +61,102 @@ def test_checksum_changes_when_runbook_changes(tmp_path):
     second = TfidfRetriever(str(tmp_path)).get("a#fix")
     assert first.checksum != second.checksum
     assert first.runbook_version != second.runbook_version
+
+
+# ---- Athena (hybrid RAG service) adapter ------------------------------------
+def _athena_client(handler):
+    import httpx
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def _athena_body(relevant=True):
+    return {
+        "relevant": relevant,
+        "results": [
+            {
+                "chunk_id": "high-error-rate#restart-after-a-recent-deploy",
+                "source": "high-error-rate.md",
+                "heading": "Restart after a recent deploy",
+                "lines": "10-14",
+                "text": "## Restart after a recent deploy\nrestart the service with restart_service.",
+                "checksum": "abc123",
+                "score": 0.9731,
+            }
+        ],
+    }
+
+
+def test_athena_retriever_maps_results_to_citable_chunks():
+    import json
+
+    from src.rag import AthenaRetriever, TfidfRetriever
+
+    seen = {}
+
+    def handler(request):
+        seen.update(json.loads(request.content))
+        import httpx
+
+        return httpx.Response(200, json=_athena_body())
+
+    r = AthenaRetriever(TfidfRetriever(), "http://athena:8100", client=_athena_client(handler))
+    results = r.retrieve("5xx after deploy", 3)
+    assert seen == {"query": "5xx after deploy", "top_k": 3, "mode": "hybrid_rerank", "strategy": "headers"}
+    chunk = results[0].chunk
+    assert chunk.chunk_id == "high-error-rate#restart-after-a-recent-deploy"
+    assert (chunk.start_line, chunk.end_line) == (10, 14) and chunk.runbook_version == "athena"
+    assert results[0].score == 0.9731
+    assert r.get(chunk.chunk_id) is chunk  # the approval page can show the cited text
+
+
+def test_athena_irrelevant_result_means_escalate():
+    import httpx
+
+    from src.rag import AthenaRetriever, TfidfRetriever
+
+    r = AthenaRetriever(
+        TfidfRetriever(), client=_athena_client(lambda req: httpx.Response(200, json=_athena_body(False)))
+    )
+    assert r.retrieve("what is the capital of Finland") == []
+
+
+def test_athena_outage_falls_back_to_tfidf_and_is_counted():
+    import httpx
+
+    from src.observability import RETRIEVER_FALLBACKS
+    from src.rag import AthenaRetriever, TfidfRetriever
+
+    def down(request):
+        raise httpx.ConnectError("refused", request=request)
+
+    before = RETRIEVER_FALLBACKS._value.get()
+    r = AthenaRetriever(TfidfRetriever(), client=_athena_client(down))
+    results = r.retrieve("5xx error rate exception after deploy")
+    assert results and results[0].chunk.source == "high-error-rate.md"
+    assert RETRIEVER_FALLBACKS._value.get() == before + 1
+    bad = AthenaRetriever(TfidfRetriever(), client=_athena_client(lambda req: httpx.Response(200, json={"oops": 1})))
+    assert bad.retrieve("5xx error rate exception after deploy")[0].chunk.source == "high-error-rate.md"
+
+
+def test_agent_plans_with_athena_and_policy_still_applies():
+    import httpx
+
+    from src import agent
+    from src.demo import sim
+    from src.rag import AthenaRetriever, TfidfRetriever, get_retriever, set_retriever
+
+    original = get_retriever()
+    set_retriever(
+        AthenaRetriever(TfidfRetriever(), client=_athena_client(lambda req: httpx.Response(200, json=_athena_body())))
+    )
+    try:
+        sim.inject_error()
+        result = agent.plan(
+            {"event_id": "e", "name": "High 5xx error rate", "description": "500s after deploy", "service": "web"}
+        )
+        assert result["proposal"]["tool_name"] == "restart_service"
+        assert result["citation"]["chunk_id"] == "high-error-rate#restart-after-a-recent-deploy"
+        assert result["citation"]["runbook_version"] == "athena"
+    finally:
+        set_retriever(original)

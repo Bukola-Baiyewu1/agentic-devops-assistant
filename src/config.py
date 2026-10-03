@@ -67,6 +67,12 @@ class Settings(BaseModel):
     # --- retrieval ---------------------------------------------------------
     retrieval_top_k: int = 3
     retrieval_min_score: float = 0.08
+    # "tfidf" (built in) or "athena" (the hybrid-RAG service, POST {athena_url}/retrieve)
+    retriever: str = "tfidf"
+    athena_url: str = "http://localhost:8100"
+    athena_timeout_seconds: float = 5.0
+    athena_strategy: str = "headers"
+    athena_mode: str = "hybrid_rerank"
 
     # --- policy ------------------------------------------------------------
     allowed_services: list[str] = ["web"]
@@ -126,6 +132,11 @@ def load_settings() -> Settings:
         llm_output_price_per_mtok=float(_env("AEGIS_LLM_OUTPUT_PRICE_PER_MTOK", "15.0")),
         retrieval_top_k=int(_env("AEGIS_RETRIEVAL_TOP_K", "3")),
         retrieval_min_score=float(_env("AEGIS_RETRIEVAL_MIN_SCORE", "0.08")),
+        retriever=_env("AEGIS_RETRIEVER", "tfidf"),
+        athena_url=_env("ATHENA_URL", "http://localhost:8100"),
+        athena_timeout_seconds=float(_env("ATHENA_TIMEOUT_SECONDS", "5")),
+        athena_strategy=_env("ATHENA_STRATEGY", "headers"),
+        athena_mode=_env("ATHENA_MODE", "hybrid_rerank"),
         allowed_services=_csv("AEGIS_ALLOWED_SERVICES", "web"),
         max_replicas=int(_env("AEGIS_MAX_REPLICAS", "5")),
         approval_ttl_seconds=int(_env("AEGIS_APPROVAL_TTL_SECONDS", "900")),
