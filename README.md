@@ -195,8 +195,25 @@ Run them yourself: `python -m scripts.eval_retrieval` and `python -m scripts.eva
 Section-level chunks make citations precise (file, heading, and line range) and
 the threshold makes unrelated alerts escalate instead of matching something at
 random. The cost is one query where a closely related section of another runbook
-ranks first. Embedding retrieval was not added: the guide's rule is to add it only
-when an evaluation shows it helps, and that comparison has not been run yet.
+ranks first.
+
+**Hybrid retrieval (Athena) on the same 16 queries.** Aegis can use
+[Athena](https://github.com/Bukola-Baiyewu1/hybrid-rag-runbooks), a separate
+hybrid-RAG service (bge-small embeddings + BM25, RRF fusion, cross-encoder
+reranking), as its retriever. Athena's CI runs this comparison on every push:
+
+| Metric | TF-IDF (default) | Athena |
+|---|---|---|
+| Correct runbook ranked first | 0.93 | 0.86 |
+| Supporting section in top 3 | 0.93 | 0.93 |
+| MRR (section) | 0.88 | 0.86 |
+| Unrelated queries correctly return nothing | 1.00 | 1.00 |
+
+Athena ties on recall and declines one vague query that TF-IDF answers. On
+this 5-runbook corpus that is not an improvement, so TF-IDF stays the default.
+Athena earns its place on its larger 20-runbook corpus, where hybrid search
+with reranking beats dense-only search by about 7 points of Hit@1 and 25 points
+of multi-hop recall.
 
 **Planner + policy** (30 alerts: 10 supported, 10 must escalate, 5 prompt
 injection, 5 ambiguous), mock planner:
@@ -251,13 +268,14 @@ important ones:
 | `AEGIS_APPROVAL_TTL_SECONDS` | `900` | How long an approval window stays open |
 | `AEGIS_MAX_EVENT_ATTEMPTS` | `5` | Retries before dead-lettering |
 | `DATABASE_URL` | SQLite file | PostgreSQL in Compose and production |
+| `AEGIS_RETRIEVER` | `tfidf` | `athena` to retrieve from the Athena service at `ATHENA_URL` (falls back to TF-IDF if unreachable) |
 | `AEGIS_ENV` | `development` | `production` refuses insecure settings at startup |
 
 ## Testing and CI
 
 ```bash
 pip install --require-hashes -r requirements.txt -r requirements-dev.txt
-pytest -q --cov          # 145 tests, about 95% line coverage
+pytest -q --cov          # 149 tests, about 95% line coverage
 ruff check src scripts tests && mypy
 ```
 
@@ -290,7 +308,7 @@ src/
   events.py       durable event lifecycle, retries, dead letters, replay
   worker.py       background worker
   state.py        PostgreSQL / SQLite persistence (SQLAlchemy Core)
-  rag.py          heading chunking, TF-IDF retrieval, citations
+  rag.py          heading chunking, TF-IDF retrieval, Athena adapter, citations
   tools.py        read tools and capability-guarded action tools
   mcp_server.py   MCP interface
   demo.py         the simulated service
@@ -298,7 +316,7 @@ src/
 runbooks/         the retrieval corpus
 evals/            labelled retrieval and planner cases
 scripts/          CLI, evaluations, smoke test
-tests/            145 tests
+tests/            149 tests
 deploy/azure/     Container Apps deployment
 observability/    Prometheus and Grafana provisioning
 docs/             architecture, security model, deployment
@@ -315,8 +333,9 @@ docs/             architecture, security model, deployment
   rate limiting or a shared store.
 * Schema changes use `create_all`; a migration tool (Alembic) is the next step
   before evolving the schema in production.
-* Retrieval is TF-IDF. Embeddings or pgvector should be added only if the
-  evaluation above shows a measurable gain.
+* Retrieval defaults to TF-IDF. `AEGIS_RETRIEVER=athena` switches to the
+  Athena hybrid-RAG service; on Aegis's current corpus it does not beat TF-IDF
+  (see Evaluation), so it stays optional until the runbook set grows.
 * Planned: Alertmanager webhook format, Slack approval buttons, more runbooks
   and evaluation cases.
 
