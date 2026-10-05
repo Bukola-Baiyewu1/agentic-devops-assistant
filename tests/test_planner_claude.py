@@ -231,3 +231,14 @@ def test_model_never_sees_approval_secrets_or_api_keys(client):
         store.get_action(first)["challenge"]["nonce"],
     ):
         assert secret not in sent
+
+
+def test_every_argument_is_accepted_by_the_installed_sdk():
+    """Guards against SDK upgrades that drop a parameter (the fake client would not notice)."""
+    import inspect
+
+    p = planner(propose())
+    run(p)
+    accepted = inspect.signature(anthropic.resources.messages.Messages.create).parameters
+    sent = set(p.client.messages.calls[0])
+    assert sent <= set(accepted), sent - set(accepted)
