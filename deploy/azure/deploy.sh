@@ -33,6 +33,8 @@ if [ "$(az group exists --name "$RESOURCE_GROUP")" = "true" ]; then
   PG_SERVER="${PG_SERVER:-$(existing az postgres flexible-server list)}"
 fi
 SUFFIX="${SUFFIX:-$(openssl rand -hex 3)}"
+# A unique tag per run, so a redeploy always rolls out the newly built code.
+IMAGE_TAG="${IMAGE_TAG:-$(git rev-parse --short HEAD 2>/dev/null || echo build)-$(date +%Y%m%d%H%M%S)}"
 ACR_NAME="${ACR_NAME:-aegisacr${SUFFIX}}"
 PG_SERVER="${PG_SERVER:-aegis-pg-${SUFFIX}}"
 ENV_NAME="${ENV_NAME:-aegis-env}"
@@ -54,7 +56,7 @@ if az acr show --resource-group "$RESOURCE_GROUP" --name "$ACR_NAME" --output no
 else
   az acr create --resource-group "$RESOURCE_GROUP" --name "$ACR_NAME" --sku Basic --admin-enabled true --output none
 fi
-az acr build --registry "$ACR_NAME" --image aegis:latest . --output none
+az acr build --registry "$ACR_NAME" --image "aegis:${IMAGE_TAG}" . --output none
 ACR_SERVER="$(az acr show --name "$ACR_NAME" --query loginServer -o tsv)"
 ACR_USER="$(az acr credential show --name "$ACR_NAME" --query username -o tsv)"
 ACR_PASS="$(az acr credential show --name "$ACR_NAME" --query 'passwords[0].value' -o tsv)"
@@ -96,7 +98,7 @@ trap 'rm -rf "$SPEC_DIR"' EXIT   # the specs contain secrets: always delete them
 
 # Writes a Container App spec (JSON is valid YAML for `az containerapp create --yaml`).
 write_spec() {  # $1=app name  $2=role (api|worker)  $3=output file
-  APP="$1" ROLE="$2" OUT="$3" LOCATION="$LOCATION" ENV_ID="$ENV_ID" IMAGE="$ACR_SERVER/aegis:latest" \
+  APP="$1" ROLE="$2" OUT="$3" LOCATION="$LOCATION" ENV_ID="$ENV_ID" IMAGE="$ACR_SERVER/aegis:${IMAGE_TAG}" \
   ACR_SERVER="$ACR_SERVER" ACR_USER="$ACR_USER" ACR_PASS="$ACR_PASS" DATABASE_URL="$DATABASE_URL" \
   SECRET_KEY="$SECRET_KEY" WEBHOOK_SECRET="$WEBHOOK_SECRET" METRICS_TOKEN="$METRICS_TOKEN" \
   APPROVERS="${APPROVER_NAME}:${APPROVER_HASH}" python3 - <<'PY'
