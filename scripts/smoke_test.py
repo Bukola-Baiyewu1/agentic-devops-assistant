@@ -54,7 +54,17 @@ def main(base: str) -> None:
     secret = os.getenv("AEGIS_WEBHOOK_SECRET", "")
     if secret:
         headers["X-Aegis-Signature"] = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-    r = c.post("/webhook/alert", content=body, headers=headers).json()
+    resp = c.post("/webhook/alert", content=body, headers=headers)
+    if resp.status_code == 401:
+        print(
+            "FAIL alert produced a pending, cited proposal: 401, the webhook signature was rejected. "
+            "Set AEGIS_WEBHOOK_SECRET to the secret the deploy printed"
+            + (" (the one you set does not match)." if secret else " (it is not set in this shell).")
+        )
+        sys.exit(1)
+    r = resp.json()
+    if r.get("status") != "pending_approval":
+        print(f"     HTTP {resp.status_code}: {json.dumps(r)[:300]}")
     check(r.get("status") == "pending_approval", "alert produced a pending, cited proposal")
     check(bool(r.get("citation")), "proposal cites a runbook")
     action_id = r["action_id"]
