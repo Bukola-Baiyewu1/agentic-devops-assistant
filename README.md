@@ -10,6 +10,10 @@ that applies, and proposes **one** remediation with a line-level citation. It th
 decision is audited, every action can be rolled back with a second approval, and
 every step is traced and measured.
 
+**Live demo:** [aegis-api.icypebble-35d979d9.northeurope.azurecontainerapps.io](https://aegis-api.icypebble-35d979d9.northeurope.azurecontainerapps.io/docs) (API docs; the
+health check is [`/health`](https://aegis-api.icypebble-35d979d9.northeurope.azurecontainerapps.io/health)). Actions and approvals require a
+login, so the public link shows the API surface, not other people's data.
+
 ![Demo: break, alert, cited proposal, approval, recovery, separately approved rollback](docs/demo.gif)
 
 > **Scope:** the infrastructure Aegis controls is a **simulator**. It has no
@@ -308,6 +312,13 @@ PostgreSQL Flexible Server, secrets stored as Container Apps secrets, and
 `AEGIS_ENV=production`. Production mode requires login for every approval,
 denial, rollback, action, event, and trace endpoint, requires signed webhooks,
 and refuses to start with development secrets. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+The [live demo](https://aegis-api.icypebble-35d979d9.northeurope.azurecontainerapps.io/docs) runs this way in North Europe. Its end-to-end smoke
+test (`scripts/smoke_test.py`) passes all 12 checks against the deployment:
+readiness, login required, a signed alert producing a cited proposal, nothing
+running before approval, a wrong token refused, the approved action executing
+and the service recovering, the token never appearing in action JSON, a
+separately approved rollback, and token-protected metrics.
 
 ## Project layout
 
