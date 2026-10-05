@@ -280,6 +280,17 @@ def _block_to_dict(block: Any) -> dict:
     return dict(block.__dict__)
 
 
+def _api_error_detail(exc: Any) -> str:
+    """The API's own error message (e.g. an unknown model name), shortened for logs."""
+    body = getattr(exc, "body", None)
+    message = ""
+    if isinstance(body, dict):
+        err = body.get("error")
+        if isinstance(err, dict):
+            message = str(err.get("message", ""))
+    return (message or str(getattr(exc, "message", "")) or "no detail")[:200]
+
+
 class ClaudePlanner:
     mode = "anthropic"
 
@@ -327,6 +338,9 @@ class ClaudePlanner:
                     or (isinstance(exc, anthropic.APIStatusError) and exc.status_code >= 500)
                 ):
                     raise TransientPlannerError(f"{type(exc).__name__} {exc.status_code}") from exc
+                if isinstance(exc, anthropic.APIStatusError):
+                    detail = _api_error_detail(exc)
+                    raise PermanentPlannerError(f"{type(exc).__name__} {exc.status_code}: {detail}") from exc
                 if isinstance(exc, anthropic.APIError):
                     raise PermanentPlannerError(type(exc).__name__) from exc
             raise

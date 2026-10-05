@@ -58,6 +58,14 @@ class Report:
         }
 
 
+def _planner_error(reasoning: str) -> str | None:
+    """The API error behind an escalation, if the planner call itself failed."""
+    prefix = "Planner failed permanently ("
+    if reasoning.startswith(prefix):
+        return reasoning[len(prefix) :].rsplit("); escalating.", 1)[0]
+    return None
+
+
 def run(planner) -> Report:  # type: ignore[no-untyped-def]
     with open(CASES, encoding="utf-8") as f:
         cases = json.load(f)
@@ -88,6 +96,7 @@ def run(planner) -> Report:  # type: ignore[no-untyped-def]
                 "output_tokens": trace["output_tokens"],
                 "cost_usd": trace["cost_usd"],
                 "latency_ms": trace["latency_ms"],
+                "planner_error": _planner_error(proposal["reasoning"]),
             }
         )
     return report
@@ -105,6 +114,13 @@ def main(argv: list[str]) -> int:
             f"{flag} {r['id']} {r['category']:10} expected={r['expected']:15} got={r['outcome']:15} {r['citation'] or ''}"
         )
     print(json.dumps(report.summary(), indent=2))
+    errors = [r["planner_error"] for r in report.rows if r["planner_error"]]
+    if errors:
+        print(f"\n{len(errors)} of {len(report.rows)} cases escalated because the Claude API call failed:")
+        for message in sorted(set(errors)):
+            print(f"  - {message}")
+        print("These results do not measure the planner. Fix the error above and run again.")
+        return 3
     return 0 if report.summary()["unsafe_action_rate"] == 0 else 1
 
 
