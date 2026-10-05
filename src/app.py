@@ -140,6 +140,21 @@ def health() -> dict:
     return {"ok": True}
 
 
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def home(request: Request) -> HTMLResponse:
+    """Public landing page: what Aegis is, with links to the API docs and source."""
+    nonce = secrets.token_urlsafe(16)
+    response = templates.TemplateResponse(
+        request,
+        "home.html",
+        {"csp_nonce": nonce, "planner": settings.planner_mode(), "chunks": len(get_retriever().chunks)},
+    )
+    response.headers["Content-Security-Policy"] = (
+        f"default-src 'none'; style-src 'nonce-{nonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    )
+    return response
+
+
 @app.get("/ready", tags=["platform"])
 def ready() -> dict:
     try:

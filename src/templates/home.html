@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aegis - Agentic DevOps Assistant</title>
+  <meta name="description" content="Aegis triages infrastructure alerts, cites the runbook, and acts only after a human approves.">
+  <style nonce="{{ csp_nonce }}">
+    :root { --fg:#16181d; --muted:#5b6170; --bg:#f6f7f9; --card:#fff; --line:#dfe2e8; --ok:#137a3d; --accent:#2747c9; --code:#f1f3f6; }
+    @media (prefers-color-scheme: dark) {
+      :root { --fg:#e8eaee; --muted:#a2a8b5; --bg:#121418; --card:#1b1e24; --line:#2c3039; --ok:#3fb36b; --accent:#8ea2ff; --code:#23272f; }
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; font:16px/1.55 system-ui, -apple-system, Segoe UI, sans-serif; color:var(--fg); background:var(--bg); }
+    main { max-width:780px; margin:48px auto; padding:0 16px; }
+    h1 { font-size:30px; margin:0 0 6px; letter-spacing:-.01em; }
+    .lede { font-size:18px; color:var(--muted); margin:0 0 28px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 22px; margin-bottom:16px; }
+    h2 { font-size:15px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 12px; }
+    ol, ul { margin:0; padding-left:22px; }
+    li { margin:6px 0; }
+    .links { display:flex; flex-wrap:wrap; gap:10px; margin:0 0 16px; }
+    .links a { display:inline-block; padding:9px 16px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); text-decoration:none; font-weight:600; }
+    .links a.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+    .status { display:inline-flex; align-items:center; gap:8px; font-size:14px; color:var(--muted); margin-bottom:20px; }
+    .dot { width:9px; height:9px; border-radius:50%; background:var(--ok); }
+    code { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:14px; background:var(--code); padding:1px 6px; border-radius:5px; }
+    .muted { color:var(--muted); font-size:14px; }
+    a { color:var(--accent); }
+  </style>
+</head>
+<body>
+<main>
+  <div class="status"><span class="dot"></span>Live demo &middot; {% if planner == "mock" %}deterministic demo planner (no AI key on the public demo){% else %}planner: Claude{% endif %} &middot; {{ chunks }} runbook sections indexed</div>
+  <h1>Aegis</h1>
+  <p class="lede">An agentic DevOps assistant that investigates an alert, cites the runbook section that applies,
+    proposes one fix, and then stops until a named human approves it.</p>
+
+  <div class="links">
+    <a class="primary" href="/docs">Explore the API</a>
+    <a href="/health">Health check</a>
+    <a href="https://github.com/Bukola-Baiyewu1/agentic-devops-assistant">Source code</a>
+  </div>
+
+  <div class="card">
+    <h2>What happens to an alert</h2>
+    <ol>
+      <li>A signed webhook delivers the alert. Unsigned or tampered alerts are rejected.</li>
+      <li>The agent checks the service's health and logs, and searches the runbooks.</li>
+      <li>It proposes <strong>one</strong> action (restart or scale by one replica) with a line-level runbook citation,
+        or escalates to a human when nothing in the runbooks supports an action.</li>
+      <li>A policy layer re-checks the proposal: allowed tool, strict arguments, correct service, and a citation that really supports it.</li>
+      <li>Nothing runs until an approver signs in and approves that exact action with a single-use, expiring token.</li>
+      <li>Every decision is audited, and any action can be rolled back with a second, separate approval.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Measured</h2>
+    <ul>
+      <li>30 labelled alerts against real Claude: 29 correct, <strong>0 unsafe actions</strong>, every must-escalate alert escalated,
+        and no prompt-injection attempt followed.</li>
+      <li>12 of 12 end-to-end checks pass against this deployment.</li>
+    </ul>
+  </div>
+
+  <p class="muted">This demo controls a <strong>simulated</strong> service only; it has no access to real infrastructure.
+    Approving, denying, and viewing actions require a login. The public API page lists every endpoint.</p>
+</main>
+</body>
+</html>

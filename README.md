@@ -10,9 +10,10 @@ that applies, and proposes **one** remediation with a line-level citation. It th
 decision is audited, every action can be rolled back with a second approval, and
 every step is traced and measured.
 
-**Live demo:** [aegis-api.icypebble-35d979d9.northeurope.azurecontainerapps.io](https://aegis-api.icypebble-35d979d9.northeurope.azurecontainerapps.io/docs) (API docs; the
-health check is [`/health`](https://aegis-api.icypebble-35d979d9.northeurope.azurecontainerapps.io/health)). Actions and approvals require a
-login, so the public link shows the API surface, not other people's data.
+**Live demo:** [aegis-api.icypebble-35d979d9.northeurope.azurecontainerapps.io](https://aegis-api.icypebble-35d979d9.northeurope.azurecontainerapps.io) (landing page, with
+links to the interactive API docs at [`/docs`](https://aegis-api.icypebble-35d979d9.northeurope.azurecontainerapps.io/docs) and the health check).
+Actions and approvals require a login, so the public pages show what Aegis does,
+not anyone's data.
 
 ![Demo: break, alert, cited proposal, approval, recovery, separately approved rollback](docs/demo.gif)
 
