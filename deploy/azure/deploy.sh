@@ -15,12 +15,23 @@
 #   az extension add --name containerapp --upgrade
 # Run from the repository root, in Git Bash, WSL, macOS, or Linux:
 #   AEGIS_APPROVER_PASSWORD='choose-a-long-password' ./deploy/azure/deploy.sh
+# Safe to rerun: it reuses the registry, database server, and environment it
+# already created in the resource group instead of paying for duplicates.
 # Remove everything afterwards (stops all costs):
 #   az group delete --name "$RESOURCE_GROUP" --yes
 set -euo pipefail
 
 RESOURCE_GROUP="${RESOURCE_GROUP:-aegis-demo-rg}"
 LOCATION="${LOCATION:-northeurope}"
+
+# On a rerun, reuse the resources an earlier run created (their names carry a random suffix).
+existing() {  # existing <list command...>: name of the first resource in the group, or empty
+  "$@" --resource-group "$RESOURCE_GROUP" --query "[0].name" -o tsv 2>/dev/null || true
+}
+if [ "$(az group exists --name "$RESOURCE_GROUP")" = "true" ]; then
+  ACR_NAME="${ACR_NAME:-$(existing az acr list)}"
+  PG_SERVER="${PG_SERVER:-$(existing az postgres flexible-server list)}"
+fi
 SUFFIX="${SUFFIX:-$(openssl rand -hex 3)}"
 ACR_NAME="${ACR_NAME:-aegisacr${SUFFIX}}"
 PG_SERVER="${PG_SERVER:-aegis-pg-${SUFFIX}}"
@@ -38,24 +49,46 @@ echo "==> Resource group $RESOURCE_GROUP in $LOCATION"
 az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --output none
 
 echo "==> Container registry $ACR_NAME and cloud image build"
-az acr create --resource-group "$RESOURCE_GROUP" --name "$ACR_NAME" --sku Basic --admin-enabled true --output none
+if az acr show --resource-group "$RESOURCE_GROUP" --name "$ACR_NAME" --output none 2>/dev/null; then
+  echo "    reusing existing registry"
+else
+  az acr create --resource-group "$RESOURCE_GROUP" --name "$ACR_NAME" --sku Basic --admin-enabled true --output none
+fi
 az acr build --registry "$ACR_NAME" --image aegis:latest . --output none
 ACR_SERVER="$(az acr show --name "$ACR_NAME" --query loginServer -o tsv)"
 ACR_USER="$(az acr credential show --name "$ACR_NAME" --query username -o tsv)"
 ACR_PASS="$(az acr credential show --name "$ACR_NAME" --query 'passwords[0].value' -o tsv)"
 
 echo "==> PostgreSQL Flexible Server $PG_SERVER (smallest burstable tier)"
-az postgres flexible-server create \
-  --resource-group "$RESOURCE_GROUP" --name "$PG_SERVER" --location "$LOCATION" \
-  --tier Burstable --sku-name Standard_B1ms --storage-size 32 --version 16 \
-  --admin-user aegis --admin-password "$PG_PASSWORD" \
-  --public-access 0.0.0.0 --yes --output none   # 0.0.0.0 = allow Azure services only, not the internet
-az postgres flexible-server db create --resource-group "$RESOURCE_GROUP" --server-name "$PG_SERVER" \
-  --database-name aegis --output none
+if az postgres flexible-server show --resource-group "$RESOURCE_GROUP" --name "$PG_SERVER" --output none 2>/dev/null; then
+  echo "    reusing existing server (setting a fresh admin password)"
+  az postgres flexible-server update --resource-group "$RESOURCE_GROUP" --name "$PG_SERVER" \
+    --admin-password "$PG_PASSWORD" --output none
+else
+  az postgres flexible-server create \
+    --resource-group "$RESOURCE_GROUP" --name "$PG_SERVER" --location "$LOCATION" \
+    --tier Burstable --sku-name Standard_B1ms --storage-size 32 --version 16 \
+    --admin-user aegis --admin-password "$PG_PASSWORD" \
+    --public-access 0.0.0.0 --yes --output none   # 0.0.0.0 = allow Azure services only, not the internet
+fi
+# The database-name option was renamed to --name in newer Azure CLI versions; accept both.
+if ! az postgres flexible-server db show --resource-group "$RESOURCE_GROUP" --server-name "$PG_SERVER" \
+    --database-name aegis --output none 2>/dev/null \
+  && ! az postgres flexible-server db show --resource-group "$RESOURCE_GROUP" --server-name "$PG_SERVER" \
+    --name aegis --output none 2>/dev/null; then
+  az postgres flexible-server db create --resource-group "$RESOURCE_GROUP" --server-name "$PG_SERVER" \
+    --name aegis --output none 2>/dev/null \
+  || az postgres flexible-server db create --resource-group "$RESOURCE_GROUP" --server-name "$PG_SERVER" \
+    --database-name aegis --output none
+fi
 DATABASE_URL="postgresql+psycopg://aegis:${PG_PASSWORD}@${PG_SERVER}.postgres.database.azure.com:5432/aegis?sslmode=require"
 
 echo "==> Container Apps environment $ENV_NAME"
-az containerapp env create --resource-group "$RESOURCE_GROUP" --name "$ENV_NAME" --location "$LOCATION" --output none
+if az containerapp env show --resource-group "$RESOURCE_GROUP" --name "$ENV_NAME" --output none 2>/dev/null; then
+  echo "    reusing existing environment"
+else
+  az containerapp env create --resource-group "$RESOURCE_GROUP" --name "$ENV_NAME" --location "$LOCATION" --output none
+fi
 
 ENV_ID="$(az containerapp env show --resource-group "$RESOURCE_GROUP" --name "$ENV_NAME" --query id -o tsv)"
 SPEC_DIR="$(mktemp -d)"
@@ -119,13 +152,21 @@ with open(e["OUT"], "w") as f:
 PY
 }
 
+create_or_update() {  # create_or_update <app name> <spec file>
+  if az containerapp show --resource-group "$RESOURCE_GROUP" --name "$1" --output none 2>/dev/null; then
+    az containerapp update --resource-group "$RESOURCE_GROUP" --name "$1" --yaml "$2" --output none
+  else
+    az containerapp create --resource-group "$RESOURCE_GROUP" --name "$1" --yaml "$2" --output none
+  fi
+}
+
 echo "==> API app (external HTTPS, health probes)"
 write_spec aegis-api api "$SPEC_DIR/api.yaml"
-az containerapp create --resource-group "$RESOURCE_GROUP" --name aegis-api --yaml "$SPEC_DIR/api.yaml" --output none
+create_or_update aegis-api "$SPEC_DIR/api.yaml"
 
 echo "==> Worker app (no ingress)"
 write_spec aegis-worker worker "$SPEC_DIR/worker.yaml"
-az containerapp create --resource-group "$RESOURCE_GROUP" --name aegis-worker --yaml "$SPEC_DIR/worker.yaml" --output none
+create_or_update aegis-worker "$SPEC_DIR/worker.yaml"
 
 FQDN="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name aegis-api --query properties.configuration.ingress.fqdn -o tsv)"
 echo
