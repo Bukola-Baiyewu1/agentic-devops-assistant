@@ -73,7 +73,15 @@ def main(base: str) -> None:
     check(rb.get("status") == "rolled_back", "rollback approved separately and applied")
     metrics_token = os.getenv("AEGIS_METRICS_TOKEN", "")
     headers = {"Authorization": f"Bearer {metrics_token}"} if metrics_token else {}
-    check("aegis_approvals_total" in httpx.get(base.rstrip("/") + "/metrics", headers=headers).text, "metrics exposed")
+    m = httpx.get(base.rstrip("/") + "/metrics", headers=headers)
+    if m.status_code == 401:
+        print(
+            "FAIL metrics exposed: 401, the server wants a metrics token. Set AEGIS_METRICS_TOKEN to the "
+            "token the deploy printed"
+            + (" (the one you set does not match)." if metrics_token else " (it is not set in this shell).")
+        )
+        sys.exit(1)
+    check(m.status_code == 200 and "aegis_approvals_total" in m.text, f"metrics exposed (HTTP {m.status_code})")
     c.post("/demo/fix", json={})
     print("smoke test passed")
 
