@@ -93,8 +93,11 @@ Both planners return the same `Proposal` schema:
  "confidence": 0.85}
 ```
 
-The Claude planner uses native tool use with `tool_choice: any` and parallel tool
-calls disabled, so each turn is exactly one tool call. Alert text, logs, and
+The Claude planner uses native tool use with parallel tool calls disabled, so
+each turn is at most one tool call. It uses `tool_choice: auto` because current
+Claude models reason before acting and reject forced tool use (`any`/`tool`);
+the system prompt requires a tool call every turn, and if the model answers in
+plain text it gets one reminder, then the alert escalates. Alert text, logs, and
 runbook passages are wrapped in tags that the system prompt declares to be data,
 not instructions. The planner never sees approval challenges or capabilities.
 

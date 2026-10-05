@@ -86,11 +86,12 @@ def test_read_tool_then_cited_proposal_stops_at_pending_approval():
     assert sim.health()["status"] == "unhealthy"
 
 
-def test_tool_choice_forces_a_tool_and_no_parallel_calls():
+def test_tool_choice_allows_reasoning_and_no_parallel_calls():
     p = planner(propose())
     run(p)
     call = p.client.messages.calls[0]
-    assert call["tool_choice"] == {"type": "any", "disable_parallel_tool_use": True}
+    # "any"/"tool" are rejected by models that reason before acting
+    assert call["tool_choice"] == {"type": "auto", "disable_parallel_tool_use": True}
     assert call["model"] == settings.agent_model
     assert {t["name"] for t in call["tools"]} == {
         "get_service_health",
@@ -174,9 +175,19 @@ def test_unknown_tool_call_is_refused():
     assert reply["is_error"] is True and "not an available tool" in reply["content"]
 
 
-def test_no_tool_call_escalates():
-    p = planner([{"type": "text", "text": "I would restart it"}])
+def test_no_tool_call_gets_one_reminder_then_escalates():
+    text = [{"type": "text", "text": "I would restart it"}]
+    p = planner(text, text)
     assert run(p)["proposal"]["decision"] == "escalate"
+    assert len(p.client.messages.calls) == 2
+    assert "must call exactly one tool" in p.client.messages.calls[1]["messages"][-1]["content"]
+
+
+def test_no_tool_call_then_tool_call_after_reminder_is_used():
+    p = planner([{"type": "text", "text": "Let me think."}], propose())
+    result = run(p)
+    assert result["proposal"]["decision"] == "propose_action"
+    assert result["proposal"]["tool_name"] == "restart_service"
 
 
 def _req():
