@@ -295,7 +295,7 @@ important ones:
 
 ```bash
 pip install --require-hashes -r requirements.txt -r requirements-dev.txt
-pytest -q --cov          # 149 tests, about 95% line coverage
+pytest -q --cov          # 154 tests, about 95% line coverage
 ruff check src scripts tests && mypy
 ```
 
@@ -343,7 +343,7 @@ src/
 runbooks/         the retrieval corpus
 evals/            labelled retrieval and planner cases
 scripts/          CLI, evaluations, smoke test
-tests/            149 tests
+tests/            154 tests
 deploy/azure/     Container Apps deployment
 observability/    Prometheus and Grafana provisioning
 docs/             architecture, security model, deployment
